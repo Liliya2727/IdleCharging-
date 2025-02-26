@@ -1,1 +1,62 @@
+#!/bin/sh
 
+# Function to get battery percentage
+BatteryPercentage() {
+    dumpsys battery | grep -m 1 "level:" | awk '{print $2}'
+}
+
+# Function to check if the phone is charging
+isCharging() {
+    dumpsys battery | grep -m 1 "status:" | awk '{print $2}'
+}
+
+# Function to write values to sysfs/proc files
+apply() {
+	if [ -f $2 ]; then
+		chmod 644 $2 >/dev/null 2>&1
+		echo $1 >$2 2>/dev/null
+		chmod 444 $2 >/dev/null 2>&1
+	fi
+}
+
+# Enable Idle charging
+startIdleCharge() {
+	apply "0 1" /proc/mtk_battery_cmd/current_cmd
+}
+
+# Disable Idle charging
+disableIdleCharge() {
+	apply "0 0" /proc/mtk_battery_cmd/current_cmd
+}
+
+# Apply mode based on Battery Level
+apply_mode() {
+    battery_level=$(BatteryPercentage)
+    charging_status=$(isCharging)
+
+    if [ "$charging_status" -eq 2 ] && [ "$battery_level" -ge 90 ]; then
+        # Enable Idle Charging when battery reaches 90% and charging
+        if [ "$cur_mode" -ne 1 ]; then
+            export cur_mode=1
+            /system/bin/am start -a android.intent.action.MAIN -e toasttext "Battery reached 90%, Enable idle Charging..." -n bellavita.toast/.MainActivity
+            startIdleCharge
+        fi
+    else
+        # Disable Idle Charge in all other conditions
+        if [ "$cur_mode" -ne 0 ]; then
+            export cur_mode=0
+            disableIdleCharge
+        fi
+    fi
+}
+
+# Monitoring
+monitoring() {
+	while true; do
+			apply_mode
+	sleep 5
+done		
+}
+
+# Start checking device if it's charging
+monitoring
